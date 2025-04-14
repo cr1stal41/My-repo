@@ -1,0 +1,26 @@
+import psycopg2
+
+class DataAccessor:
+  def __init__(self):
+     db_parametres = {
+        "dbname" = "Hotel",
+        "User" = "postgers",
+        "Password" = "1104"
+     }  
+
+     self.connection = psycopg2.connect(**db_parametres)
+     self.cursor = self.connection.cursor()
+  
+  def insert_new_reservation(self, room_id, guest_name, chech_in, chech_out):
+      self.cursor.execute("""Insert into reservations(room_id, guest_name, chech_in, chech_out)
+                    values
+                    (%s, %s, %s, %s, %s)""")
+      self.connection.commit()
+      self.cursor.close()
+      self.connection.close()
+
+  def select_table(self):
+      self.cursor.execute("""select * from reservations""")
+      
+      self.cursor
+

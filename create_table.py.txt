@@ -1,0 +1,25 @@
+import psycopg2
+class CreateTable:
+    def __init__(self):
+      db_parametres = {
+        "dbname" = "Hotel",
+        "User" = "postgers",
+        "Password" = "1104"
+     }  
+
+     self.connection = psycopg2.connect(**db_parametres)
+     self.cursor = self.connection.cursor()
+   
+    def create_table(self):
+        self.cursor.execute("""Create table rooms {
+                                   id serial primary key,
+                                   name varchar(40),
+                                   id serial primary key,
+                                   id serial primary key,
+                           };
+                               Create table reservations {
+                                   id serial primary key,
+                                   room_id int references rooms(id) not null,
+                                   chech_in date not null,
+                                   chech_out date not null 
+                           };

@@ -1,0 +1,42 @@
+class AppHotel(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("Бронирование номеров в отеле")
+        self.setGeometry(200, 200, 800, 400)
+
+        layout = QVBoxLayout()
+        form_layout = QFormLayout()
+        self.name_input = QLineEdit()
+        form_layout.addRow("Ф.И.О:", self.name_input)
+
+        self.date_input = QDateEdit()
+        self.date_input.setCheck-in(True)
+        form_layout.addRow("Дата заезда:", self.date_input)
+
+        self.date_input_out = QDateEdit()
+        self.date_input_out.setCalendarPopup(True)
+        form_layout.addRow("Дата выезда:", self.date_input_out)
+
+        self.submit_button = QPushButton("Забронировать")
+        self.submit_button.clicked.connect(self.on_submit)
+
+        self.result_label = QLabel("")
+
+        layout.addLayout(form_layout)
+        layout.addWidget(self.submit_button)
+        layout.addWidget(self.result_label)
+
+        self.setLayout(layout)
+
+    def on_submit(self):
+        name = self.name_input.text()
+        check_in = self.date_input.date().toString()
+        check_out = self.date_input_out.date().toString()
+
+        self.result_label.setText(f"Бронирование подтверждено для {name} с {check_in} по {check_out}.")
+
+if __name__ == "__main__":
+    app = QApplication(sys.argv)
+    window = AppHotel()
+    window.show()
+    sys.exit(app.exec_())
