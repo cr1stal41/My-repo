@@ -1,0 +1,147 @@
+"""Обучение модели распознавания эмоций: FER-2013 + (по желанию) ваши собственные фото.
+
+Структура данных:
+    train/<эмоция>/*.png, test/<эмоция>/*.png        - FER-2013 (Kaggle: msambare/fer2013)
+    my_data/train/<эмоция>/*.png, my_data/test/...   - ваши снимки из collect.py (необязательно)
+"""
+import json
+from collections import Counter
+from pathlib import Path
+
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers, models
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
+
+# ---------- Настройки ----------
+IMG_SIZE = (96, 96)      # если поменяете, поменяйте и в cam.py
+BATCH = 64
+EPOCHS_HEAD = 8          # обучаем только новую "голову"
+EPOCHS_FINE = 15         # дообучаем верхние слои MobileNet
+UNFREEZE_LAST = 80       # сколько последних слоёв MobileNet размораживаем
+FINE_LR = 1e-4
+MY_SHARE = 0.25          # доля ваших фото в обучающем потоке (0.25 = каждое 4-е изображение)
+
+# ---------- Поиск данных ----------
+HERE = Path(__file__).resolve().parent
+_candidates = [HERE, HERE / "data", HERE.parent, HERE.parent / "data",
+               Path.cwd(), Path.cwd() / "data"]
+DATA_DIR = next((p for p in _candidates if (p / "train").is_dir()), None)
+if DATA_DIR is None:
+    raise SystemExit("Не нашёл папку 'train'. Положите train.py рядом с папкой train "
+                     "(или рядом с папкой data, внутри которой train).")
+print("Данные FER найдены в:", DATA_DIR)
+
+MY_DIR = next((p / "my_data" for p in (HERE, Path.cwd(), DATA_DIR)
+               if (p / "my_data" / "train").is_dir()), None)
+
+
+def has_images(folder):
+    return folder is not None and folder.is_dir() and any(folder.rglob("*.png"))
+
+
+# ---------- 1. Данные ----------
+_common = dict(image_size=IMG_SIZE, batch_size=BATCH, color_mode="rgb", label_mode="int")
+if (DATA_DIR / "test").is_dir():
+    train_ds = tf.keras.utils.image_dataset_from_directory(
+        str(DATA_DIR / "train"), shuffle=True, seed=42, **_common)
+    val_ds = tf.keras.utils.image_dataset_from_directory(
+        str(DATA_DIR / "test"), shuffle=False, **_common)
+else:
+    print("Папки 'test' нет: беру 20% от 'train' для проверки.")
+    train_ds = tf.keras.utils.image_dataset_from_directory(
+        str(DATA_DIR / "train"), validation_split=0.2, subset="training",
+        shuffle=True, seed=42, **_common)
+    val_ds = tf.keras.utils.image_dataset_from_directory(
+        str(DATA_DIR / "train"), validation_split=0.2, subset="validation",
+        shuffle=False, seed=42, **_common)
+
+class_names = train_ds.class_names
+print("Классы:", class_names)
+with open("class_names.json", "w", encoding="utf-8") as f:
+    json.dump(class_names, f, ensure_ascii=False)
+
+# Веса классов (по FER, он несбалансирован)
+labels = np.concatenate([y.numpy() for _, y in train_ds])
+counts = Counter(labels)
+total = len(labels)
+class_weight = {c: total / (len(counts) * n) for c, n in counts.items()}
+print("Веса классов:", class_weight)
+
+# ---------- Свои фото ----------
+my_test = None
+if has_images(MY_DIR / "train" if MY_DIR else None):
+    my_train = tf.keras.utils.image_dataset_from_directory(
+        str(MY_DIR / "train"), class_names=class_names, shuffle=True, seed=42, **_common)
+    n_my = int(tf.data.experimental.cardinality(my_train).numpy())
+    print(f"Ваши фото найдены ({MY_DIR}), батчей: {n_my}. Доля в обучении: {MY_SHARE:.0%}")
+    fer_u = train_ds.unbatch()
+    my_u = my_train.unbatch().shuffle(1000).repeat()
+    train_ds = (tf.data.Dataset.sample_from_datasets(
+                    [fer_u, my_u], weights=[1 - MY_SHARE, MY_SHARE],
+                    stop_on_empty_dataset=True)
+                .batch(BATCH))
+    if has_images(MY_DIR / "test"):
+        my_test = tf.keras.utils.image_dataset_from_directory(
+            str(MY_DIR / "test"), class_names=class_names, shuffle=False, **_common)
+else:
+    print("Папка my_data не найдена, обучаюсь только на FER-2013.")
+
+train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
+val_ds = val_ds.prefetch(tf.data.AUTOTUNE)
+
+# ---------- 2. Модель ----------
+augment = tf.keras.Sequential([
+    layers.RandomFlip("horizontal"),
+    layers.RandomRotation(0.08),
+    layers.RandomZoom(0.1),
+    layers.RandomBrightness(0.2, value_range=(0, 255)),
+    layers.RandomContrast(0.2),
+])
+
+base = MobileNetV2(input_shape=IMG_SIZE + (3,), include_top=False, weights="imagenet")
+base.trainable = False
+
+inputs = layers.Input(shape=IMG_SIZE + (3,))  # значения 0..255, RGB
+x = augment(inputs)
+x = layers.Lambda(preprocess_input)(x)
+x = base(x, training=False)
+x = layers.GlobalAveragePooling2D()(x)
+x = layers.Dropout(0.3)(x)
+outputs = layers.Dense(len(class_names), activation="softmax")(x)
+model = models.Model(inputs, outputs)
+
+
+def make_callbacks():
+    return [
+        tf.keras.callbacks.EarlyStopping(patience=4, restore_best_weights=True),
+        tf.keras.callbacks.ReduceLROnPlateau(factor=0.5, patience=2),
+    ]
+
+
+# ---------- 3. Этап 1: только голова ----------
+model.compile(optimizer=tf.keras.optimizers.Adam(1e-3),
+              loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS_HEAD,
+          class_weight=class_weight, callbacks=make_callbacks())
+
+# ---------- 4. Этап 2: fine-tuning ----------
+base.trainable = True
+for layer in base.layers[:-UNFREEZE_LAST]:
+    layer.trainable = False
+
+model.compile(optimizer=tf.keras.optimizers.Adam(FINE_LR),
+              loss="sparse_categorical_crossentropy", metrics=["accuracy"])
+model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS_FINE,
+          class_weight=class_weight, callbacks=make_callbacks())
+
+# ---------- 5. Оценка и сохранение ----------
+_, acc = model.evaluate(val_ds, verbose=0)
+print(f"Точность на тесте FER-2013: {acc:.3f}")
+if my_test is not None:
+    _, my_acc = model.evaluate(my_test, verbose=0)
+    print(f"Точность на ваших тестовых фото: {my_acc:.3f}")
+
+model.save("emotion_model.keras")
+print("Модель сохранена: emotion_model.keras")
