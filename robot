@@ -1,0 +1,1347 @@
+import tkinter as tk
+from tkinter import messagebox
+import random
+from datetime import datetime
+
+
+# ============================================================
+# ЦВЕТА — RETRO GREEN / PIP-BOY STYLE
+# ============================================================
+
+BG = "#080b07"
+PANEL = "#101710"
+PANEL2 = "#151d14"
+
+GREEN = "#39ff14"
+GREEN2 = "#20c900"
+DARK_GREEN = "#0b450b"
+DIM_GREEN = "#176b17"
+
+TEXT = "#55ff33"
+TEXT_DIM = "#278f27"
+
+BLACK = "#030503"
+
+ORANGE = "#ffb000"
+RED = "#ff3b30"
+
+
+# ============================================================
+# АЛФАВИТ
+# ============================================================
+
+ALPHABET = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯ"
+
+
+# ============================================================
+# ГЛОБАЛЬНЫЕ ПЕРЕМЕННЫЕ
+# ============================================================
+
+ROWS = 6
+COLS = 6
+EMPTY_COUNT = 6
+
+table = []
+
+moves = []
+current_move = 0
+
+sorting = False
+
+cell_size = 70
+
+
+# ============================================================
+# ОСНОВНОЕ ОКНО
+# ============================================================
+
+root = tk.Tk()
+
+root.title("PIP-BOY // ROBOT PLANNER")
+
+root.geometry("1200x820")
+
+root.configure(
+    bg=BG
+)
+
+root.resizable(
+    False,
+    False
+)
+
+
+# ============================================================
+# ШРИФТЫ
+# ============================================================
+
+FONT_SMALL = ("Consolas", 9)
+FONT_NORMAL = ("Consolas", 11)
+FONT_BIG = ("Consolas", 16, "bold")
+FONT_TITLE = ("Consolas", 25, "bold")
+FONT_DIGITAL = ("Consolas", 32, "bold")
+
+
+# ============================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# ============================================================
+
+def letter_number(letter):
+    return ALPHABET.index(letter)
+
+
+def get_fio_letters():
+
+    fio = fio_entry.get().upper()
+
+    result = []
+
+    for char in fio:
+
+        if char in ALPHABET:
+            result.append(char)
+
+    return result
+
+
+# ============================================================
+# РАМКА ПАНЕЛИ
+# ============================================================
+
+def draw_panel(canvas, x1, y1, x2, y2, title=""):
+
+    canvas.create_rectangle(
+        x1,
+        y1,
+        x2,
+        y2,
+        fill=PANEL,
+        outline=DIM_GREEN,
+        width=2
+    )
+
+    # Верхняя декоративная линия
+    canvas.create_line(
+        x1 + 10,
+        y1 + 4,
+        x2 - 10,
+        y1 + 4,
+        fill=GREEN2,
+        width=1
+    )
+
+    if title:
+
+        canvas.create_text(
+            x1 + 15,
+            y1 + 18,
+            text=title,
+            anchor="w",
+            fill=GREEN,
+            font=FONT_NORMAL
+        )
+
+
+# ============================================================
+# ГЛАВНЫЙ CANVAS
+# ============================================================
+
+main_canvas = tk.Canvas(
+    root,
+    width=1200,
+    height=820,
+    bg=BG,
+    highlightthickness=0
+)
+
+main_canvas.pack()
+
+
+# ============================================================
+# СКАНИРУЮЩИЕ ЛИНИИ
+# ============================================================
+
+def draw_scanlines():
+
+    for y in range(0, 820, 5):
+
+        main_canvas.create_line(
+            0,
+            y,
+            1200,
+            y,
+            fill="#0a160a",
+            width=1
+        )
+
+
+draw_scanlines()
+
+
+# ============================================================
+# ЗАГОЛОВОК
+# ============================================================
+
+main_canvas.create_text(
+    40,
+    35,
+    text="PIP-BOY 3000",
+    anchor="w",
+    fill=GREEN,
+    font=FONT_TITLE
+)
+
+main_canvas.create_text(
+    40,
+    68,
+    text="TRANSPORT ROBOT // ACTION PLANNER",
+    anchor="w",
+    fill=TEXT_DIM,
+    font=FONT_SMALL
+)
+
+# Версия
+main_canvas.create_text(
+    1160,
+    35,
+    text="v1.0",
+    anchor="e",
+    fill=TEXT_DIM,
+    font=FONT_SMALL
+)
+
+main_canvas.create_line(
+    30,
+    85,
+    1170,
+    85,
+    fill=GREEN2,
+    width=2
+)
+
+
+# ============================================================
+# ЧАСЫ
+# ============================================================
+
+clock_label = tk.Label(
+    root,
+    text="00:00:00",
+    bg=BG,
+    fg=GREEN,
+    font=FONT_DIGITAL
+)
+
+clock_label.place(
+    x=970,
+    y=20
+)
+
+
+def update_clock():
+
+    now = datetime.now()
+
+    clock_label.config(
+        text=now.strftime("%H:%M:%S")
+    )
+
+    root.after(
+        1000,
+        update_clock
+    )
+
+
+update_clock()
+
+
+# ============================================================
+# ЛЕВАЯ ПАНЕЛЬ — НАСТРОЙКИ
+# ============================================================
+
+left_panel = tk.Canvas(
+    root,
+    width=280,
+    height=650,
+    bg=PANEL,
+    highlightthickness=0
+)
+
+left_panel.place(
+    x=30,
+    y=105
+)
+
+draw_panel(
+    left_panel,
+    2,
+    2,
+    278,
+    648,
+    "CONFIGURATION"
+)
+
+
+# ============================================================
+# ФИО
+# ============================================================
+
+left_panel.create_text(
+    20,
+    60,
+    text="STUDENT IDENTITY",
+    anchor="w",
+    fill=GREEN,
+    font=FONT_NORMAL
+)
+
+
+fio_entry = tk.Entry(
+    root,
+    bg=BLACK,
+    fg=GREEN,
+    insertbackground=GREEN,
+    selectbackground=DARK_GREEN,
+    selectforeground=GREEN,
+    relief="flat",
+    font=("Consolas", 10)
+)
+
+fio_entry.place(
+    x=55,
+    y=185,
+    width=230,
+    height=30
+)
+
+fio_entry.insert(
+    0,
+    "Саранчуков Даниил Андреевич"
+)
+
+
+# ============================================================
+# ФУНКЦИЯ СОЗДАНИЯ ПОЛЯ
+# ============================================================
+
+def create_setting(label, value, y):
+
+    left_panel.create_text(
+        20,
+        y,
+        text=label,
+        anchor="w",
+        fill=TEXT_DIM,
+        font=FONT_NORMAL
+    )
+
+    entry = tk.Entry(
+        root,
+        bg=BLACK,
+        fg=GREEN,
+        insertbackground=GREEN,
+        relief="flat",
+        justify="center",
+        font=FONT_BIG
+    )
+
+    entry.place(
+        x=215,
+        y=y + 85,
+        width=55,
+        height=32
+    )
+
+    entry.insert(
+        0,
+        str(value)
+    )
+
+    return entry
+
+
+rows_entry = create_setting(
+    "ROWS",
+    6,
+    235
+)
+
+cols_entry = create_setting(
+    "COLUMNS",
+    6,
+    300
+)
+
+empty_entry = create_setting(
+    "EMPTY CELLS",
+    6,
+    365
+)
+
+
+# ============================================================
+# КНОПКА В RETRO СТИЛЕ
+# ============================================================
+
+def create_button(
+    parent,
+    text,
+    command,
+    x,
+    y,
+    width=220,
+    height=40
+):
+
+    button = tk.Button(
+        parent,
+        text=text,
+        command=command,
+        bg=BLACK,
+        fg=GREEN,
+        activebackground=DARK_GREEN,
+        activeforeground=GREEN,
+        relief="flat",
+        bd=1,
+        highlightthickness=1,
+        highlightbackground=GREEN2,
+        highlightcolor=GREEN,
+        font=FONT_NORMAL,
+        cursor="hand2"
+    )
+
+    button.place(
+        x=x,
+        y=y,
+        width=width,
+        height=height
+    )
+
+    return button
+
+
+# ============================================================
+# ЦЕНТРАЛЬНАЯ ОБЛАСТЬ
+# ============================================================
+
+screen = tk.Canvas(
+    root,
+    width=600,
+    height=650,
+    bg=BLACK,
+    highlightthickness=0
+)
+
+screen.place(
+    x=330,
+    y=105
+)
+
+
+# Рамка экрана
+screen.create_rectangle(
+    2,
+    2,
+    598,
+    648,
+    fill=BLACK,
+    outline=GREEN2,
+    width=3
+)
+
+screen.create_text(
+    20,
+    20,
+    text="CONTAINER GRID",
+    anchor="w",
+    fill=GREEN,
+    font=FONT_NORMAL
+)
+
+
+# ============================================================
+# ОТРИСОВКА ТАБЛИЦЫ
+# ============================================================
+
+def draw_grid():
+
+    global cell_size
+
+    screen.delete("grid")
+
+    if not table:
+        return
+
+    rows = len(table)
+    cols = len(table[0])
+
+    available_w = 550
+    available_h = 535
+
+    cell_size = min(
+        available_w // cols,
+        available_h // rows
+    )
+
+    start_x = (
+        300
+        - (cols * cell_size) // 2
+    )
+
+    start_y = 60
+
+    # ========================================================
+    # КЛЕТКИ
+    # ========================================================
+
+    for i in range(rows):
+
+        for j in range(cols):
+
+            x1 = start_x + j * cell_size
+            y1 = start_y + i * cell_size
+
+            x2 = x1 + cell_size - 4
+            y2 = y1 + cell_size - 4
+
+            value = table[i][j]
+
+            if value == "":
+
+                fill = "#061006"
+                outline = DIM_GREEN
+
+            else:
+
+                fill = "#102910"
+                outline = GREEN2
+
+            screen.create_rectangle(
+                x1,
+                y1,
+                x2,
+                y2,
+                fill=fill,
+                outline=outline,
+                width=2,
+                tags="grid"
+            )
+
+            if value != "":
+
+                # свечение
+                screen.create_text(
+                    (x1 + x2) / 2 + 1,
+                    (y1 + y2) / 2 + 1,
+                    text=value,
+                    fill="#0c650c",
+                    font=("Consolas", max(12, cell_size // 2), "bold"),
+                    tags="grid"
+                )
+
+                screen.create_text(
+                    (x1 + x2) / 2,
+                    (y1 + y2) / 2,
+                    text=value,
+                    fill=GREEN,
+                    font=("Consolas", max(12, cell_size // 2), "bold"),
+                    tags="grid"
+                )
+
+            else:
+
+                # обозначение свободной позиции
+                screen.create_text(
+                    (x1 + x2) / 2,
+                    (y1 + y2) / 2,
+                    text="·",
+                    fill=DARK_GREEN,
+                    font=("Consolas", 18),
+                    tags="grid"
+                )
+
+
+# ============================================================
+# ПРАВАЯ ПАНЕЛЬ
+# ============================================================
+
+right_panel = tk.Canvas(
+    root,
+    width=230,
+    height=650,
+    bg=PANEL,
+    highlightthickness=0
+)
+
+right_panel.place(
+    x=950,
+    y=105
+)
+
+draw_panel(
+    right_panel,
+    2,
+    2,
+    228,
+    648,
+    "SYSTEM STATUS"
+)
+
+
+# ============================================================
+# СТАТУС
+# ============================================================
+
+right_panel.create_text(
+    20,
+    65,
+    text="STATUS",
+    anchor="w",
+    fill=TEXT_DIM,
+    font=FONT_SMALL
+)
+
+status_label = tk.Label(
+    root,
+    text="READY",
+    bg=PANEL,
+    fg=GREEN,
+    font=("Consolas", 15, "bold"),
+    wraplength=190,
+    justify="left"
+)
+
+status_label.place(
+    x=975,
+    y=175,
+    width=190
+)
+
+
+# ============================================================
+# ШАГ
+# ============================================================
+
+right_panel.create_text(
+    20,
+    150,
+    text="OPERATION",
+    anchor="w",
+    fill=TEXT_DIM,
+    font=FONT_SMALL
+)
+
+step_label = tk.Label(
+    root,
+    text="STEP 0 / 0",
+    bg=PANEL,
+    fg=GREEN,
+    font=FONT_BIG
+)
+
+step_label.place(
+    x=975,
+    y=270,
+    width=190
+)
+
+
+# ============================================================
+# ПРОГРЕСС
+# ============================================================
+
+right_panel.create_text(
+    20,
+    225,
+    text="SORT PROGRESS",
+    anchor="w",
+    fill=TEXT_DIM,
+    font=FONT_SMALL
+)
+
+progress_canvas = tk.Canvas(
+    root,
+    width=190,
+    height=22,
+    bg=BLACK,
+    highlightthickness=1,
+    highlightbackground=DIM_GREEN
+)
+
+progress_canvas.place(
+    x=970,
+    y=355
+)
+
+
+def update_progress():
+
+    progress_canvas.delete("all")
+
+    if len(moves) == 0:
+        value = 0
+    else:
+        value = current_move / len(moves)
+
+    width = int(
+        188 * value
+    )
+
+    progress_canvas.create_rectangle(
+        1,
+        1,
+        width,
+        20,
+        fill=GREEN2,
+        outline=""
+    )
+
+
+# ============================================================
+# СТАТИСТИКА
+# ============================================================
+
+right_panel.create_text(
+    20,
+    300,
+    text="CONTAINER",
+    anchor="w",
+    fill=TEXT_DIM,
+    font=FONT_SMALL
+)
+
+info_label = tk.Label(
+    root,
+    text="6 × 6\nBOXES: 30\nEMPTY: 6",
+    bg=PANEL,
+    fg=GREEN,
+    font=FONT_NORMAL,
+    justify="left"
+)
+
+info_label.place(
+    x=975,
+    y=435,
+    width=190
+)
+
+
+# ============================================================
+# ФУНКЦИЯ СОЗДАНИЯ ТАБЛИЦЫ
+# ============================================================
+
+def create_table():
+
+    global table
+    global ROWS
+    global COLS
+    global EMPTY_COUNT
+    global sorting
+    global moves
+    global current_move
+
+    sorting = False
+    moves = []
+    current_move = 0
+
+    # ========================================================
+    # ЧТЕНИЕ НАСТРОЕК
+    # ========================================================
+
+    try:
+
+        ROWS = int(
+            rows_entry.get()
+        )
+
+        COLS = int(
+            cols_entry.get()
+        )
+
+        EMPTY_COUNT = int(
+            empty_entry.get()
+        )
+
+    except ValueError:
+
+        messagebox.showerror(
+            "SYSTEM ERROR",
+            "ROWS, COLUMNS и EMPTY CELLS должны быть числами."
+        )
+
+        return
+
+    total = ROWS * COLS
+
+    if ROWS < 1 or COLS < 1:
+
+        messagebox.showerror(
+            "SYSTEM ERROR",
+            "Размерность должна быть больше нуля."
+        )
+
+        return
+
+    if EMPTY_COUNT < 1:
+
+        messagebox.showerror(
+            "SYSTEM ERROR",
+            "Количество пустых ячеек должно быть больше нуля."
+        )
+
+        return
+
+    if EMPTY_COUNT >= total:
+
+        messagebox.showerror(
+            "SYSTEM ERROR",
+            "Пустых ячеек слишком много."
+        )
+
+        return
+
+    box_count = total - EMPTY_COUNT
+
+    # ========================================================
+    # БУКВЫ ФИО
+    # ========================================================
+
+    letters = get_fio_letters()
+
+    if not letters:
+
+        messagebox.showerror(
+            "SYSTEM ERROR",
+            "Введите ФИО."
+        )
+
+        return
+
+    original = letters[:]
+
+    # Повторяем буквы
+    while len(letters) < box_count:
+
+        for char in original:
+
+            letters.append(char)
+
+            if len(letters) == box_count:
+                break
+
+    letters = letters[:box_count]
+
+    # ========================================================
+    # ПЕРЕМЕШИВАЕМ
+    # ========================================================
+
+    random.shuffle(letters)
+
+    # ========================================================
+    # СОЗДАЁМ ВСЕ ПОЗИЦИИ
+    # ========================================================
+
+    positions = []
+
+    for i in range(ROWS):
+
+        for j in range(COLS):
+
+            positions.append(
+                (i, j)
+            )
+
+    random.shuffle(
+        positions
+    )
+
+    # ========================================================
+    # ТАБЛИЦА
+    # ========================================================
+
+    table = [
+        ["" for _ in range(COLS)]
+        for _ in range(ROWS)
+    ]
+
+    # Заполняем ящики
+    for k in range(box_count):
+
+        r, c = positions[k]
+
+        table[r][c] = letters[k]
+
+    draw_grid()
+
+    update_progress()
+
+    status_label.config(
+        text="SYSTEM READY"
+    )
+
+    step_label.config(
+        text="STEP 0 / 0"
+    )
+
+    info_label.config(
+        text=(
+            f"{ROWS} × {COLS}\n"
+            f"BOXES: {box_count}\n"
+            f"EMPTY: {EMPTY_COUNT}"
+        )
+    )
+
+
+# ============================================================
+# СОЗДАНИЕ ЦЕЛЕВОЙ СИТУАЦИИ
+# ============================================================
+
+def create_goal():
+
+    letters = []
+
+    for row in table:
+
+        for value in row:
+
+            if value != "":
+
+                letters.append(
+                    value
+                )
+
+    # Алфавитная сортировка
+    letters.sort(
+        key=letter_number
+    )
+
+    goal = [
+        ["" for _ in range(COLS)]
+        for _ in range(ROWS)
+    ]
+
+    k = 0
+
+    for i in range(ROWS):
+
+        for j in range(COLS):
+
+            if k < len(letters):
+
+                goal[i][j] = letters[k]
+
+                k += 1
+
+    return goal
+
+
+# ============================================================
+# СОЗДАНИЕ ПЛАНА
+# ============================================================
+
+def make_plan():
+
+    goal = create_goal()
+
+    work = [
+        row[:]
+        for row in table
+    ]
+
+    plan = []
+
+    # Обрабатываем клетки слева направо,
+    # сверху вниз.
+    for target_row in range(ROWS):
+
+        for target_col in range(COLS):
+
+            wanted = goal[
+                target_row
+            ][
+                target_col
+            ]
+
+            # Пустые клетки находятся в конце
+            if wanted == "":
+                continue
+
+            # Уже правильно
+            if work[target_row][target_col] == wanted:
+                continue
+
+            # =================================================
+            # ИЩЕМ НУЖНУЮ БУКВУ
+            # =================================================
+
+            wanted_pos = None
+
+            for r in range(ROWS):
+
+                for c in range(COLS):
+
+                    # Не трогаем уже отсортированные клетки
+                    if r < target_row:
+                        continue
+
+                    if (
+                        r == target_row
+                        and c < target_col
+                    ):
+                        continue
+
+                    if work[r][c] == wanted:
+
+                        wanted_pos = (
+                            r,
+                            c
+                        )
+
+                        break
+
+                if wanted_pos:
+                    break
+
+            if wanted_pos is None:
+                continue
+
+            wr, wc = wanted_pos
+
+            # =================================================
+            # ЕСЛИ ЦЕЛЕВАЯ КЛЕТКА ЗАНЯТА
+            # =================================================
+
+            if work[target_row][target_col] != "":
+
+                empty_pos = None
+
+                # Ищем свободную клетку
+                # только среди ещё не обработанных
+                for r in range(ROWS):
+
+                    for c in range(COLS):
+
+                        if r < target_row:
+                            continue
+
+                        if (
+                            r == target_row
+                            and c <= target_col
+                        ):
+                            continue
+
+                        if work[r][c] == "":
+
+                            empty_pos = (
+                                r,
+                                c
+                            )
+
+                            break
+
+                    if empty_pos:
+                        break
+
+                # Если свободного места нет,
+                # используем любое свободное место
+                if empty_pos is None:
+
+                    for r in range(ROWS):
+
+                        for c in range(COLS):
+
+                            if work[r][c] == "":
+
+                                empty_pos = (
+                                    r,
+                                    c
+                                )
+
+                                break
+
+                        if empty_pos:
+                            break
+
+                if empty_pos is not None:
+
+                    er, ec = empty_pos
+
+                    old_letter = work[
+                        target_row
+                    ][
+                        target_col
+                    ]
+
+                    work[er][ec] = old_letter
+
+                    work[target_row][target_col] = ""
+
+                    plan.append(
+                        (
+                            old_letter,
+                            (
+                                target_row,
+                                target_col
+                            ),
+                            (
+                                er,
+                                ec
+                            )
+                        )
+                    )
+
+            # =================================================
+            # ПЕРЕМЕЩАЕМ НУЖНУЮ БУКВУ
+            # =================================================
+
+            work[target_row][target_col] = wanted
+
+            work[wr][wc] = ""
+
+            plan.append(
+                (
+                    wanted,
+                    (
+                        wr,
+                        wc
+                    ),
+                    (
+                        target_row,
+                        target_col
+                    )
+                )
+            )
+
+    return plan
+
+
+# ============================================================
+# НАЧАТЬ СОРТИРОВКУ
+# ============================================================
+
+def start_sort():
+
+    global moves
+    global current_move
+    global sorting
+
+    if sorting:
+        return
+
+    if not table:
+
+        messagebox.showwarning(
+            "SYSTEM",
+            "Сначала создайте начальную ситуацию."
+        )
+
+        return
+
+    moves = make_plan()
+
+    current_move = 0
+
+    if not moves:
+
+        status_label.config(
+            text="ALREADY SORTED"
+        )
+
+        return
+
+    sorting = True
+
+    status_label.config(
+        text="SORTING..."
+    )
+
+    step_label.config(
+        text=f"STEP 0 / {len(moves)}"
+    )
+
+    update_progress()
+
+    root.after(
+        350,
+        next_step
+    )
+
+
+# ============================================================
+# СЛЕДУЮЩИЙ ШАГ
+# ============================================================
+
+def next_step():
+
+    global current_move
+    global sorting
+
+    if current_move >= len(moves):
+
+        sorting = False
+
+        status_label.config(
+            text="SORTING COMPLETE"
+        )
+
+        step_label.config(
+            text=f"STEP {len(moves)} / {len(moves)}"
+        )
+
+        update_progress()
+
+        return
+
+    letter, old_pos, new_pos = moves[
+        current_move
+    ]
+
+    old_row, old_col = old_pos
+
+    new_row, new_col = new_pos
+
+    # Перемещение
+    table[new_row][new_col] = letter
+
+    table[old_row][old_col] = ""
+
+    current_move += 1
+
+    # Обновление
+    draw_grid()
+
+    update_progress()
+
+    status_label.config(
+        text=(
+            f"MOVE BOX [{letter}]\n"
+            f"{old_row + 1}:{old_col + 1}"
+            f" -> "
+            f"{new_row + 1}:{new_col + 1}"
+        )
+    )
+
+    step_label.config(
+        text=(
+            f"STEP {current_move} / "
+            f"{len(moves)}"
+        )
+    )
+
+    # Следующий шаг
+    root.after(
+        350,
+        next_step
+    )
+
+
+# ============================================================
+# СБРОС
+# ============================================================
+
+def reset():
+
+    global table
+    global moves
+    global current_move
+    global sorting
+
+    sorting = False
+
+    moves = []
+
+    current_move = 0
+
+    table = []
+
+    screen.delete("grid")
+
+    status_label.config(
+        text="SYSTEM READY"
+    )
+
+    step_label.config(
+        text="STEP 0 / 0"
+    )
+
+    update_progress()
+
+
+# ============================================================
+# КНОПКИ
+# ============================================================
+
+create_button(
+    root,
+    "▶  INITIALIZE",
+    create_table,
+    55,
+    520,
+    230,
+    42
+)
+
+create_button(
+    root,
+    "▶  START SORT",
+    start_sort,
+    55,
+    570,
+    230,
+    42
+)
+
+create_button(
+    root,
+    "■  RESET",
+    reset,
+    55,
+    620,
+    230,
+    42
+)
+
+
+# ============================================================
+# НИЖНЯЯ СТРОКА
+# ============================================================
+
+main_canvas.create_line(
+    30,
+    775,
+    1170,
+    775,
+    fill=DIM_GREEN
+)
+
+main_canvas.create_text(
+    40,
+    795,
+    text="ROBOT CONTROL SYSTEM // READY",
+    anchor="w",
+    fill=TEXT_DIM,
+    font=FONT_SMALL
+)
+
+main_canvas.create_text(
+    1160,
+    795,
+    text="POWER  ██████████  100%",
+    anchor="e",
+    fill=GREEN,
+    font=FONT_SMALL
+)
+
+
+# ============================================================
+# СТАРТОВОЕ СОСТОЯНИЕ
+# ============================================================
+
+create_table()
+
+
+# ============================================================
+# ЗАПУСК
+# ============================================================
+
+root.mainloop()
