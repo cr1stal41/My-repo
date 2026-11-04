@@ -1,0 +1,807 @@
+import os
+import threading
+import tkinter as tk
+from tkinter import filedialog, messagebox, ttk
+
+import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+from dotenv import load_dotenv
+
+load_dotenv()
+# -------------------- НАСТРОЙКИ --------------------
+
+APP_BG = "#10151f"
+PANEL_BG = "#192231"
+CARD_BG = "#202c3d"
+TEXT_COLOR = "#eef3fb"
+MUTED_COLOR = "#9eafc5"
+ACCENT = "#62d6a8"
+BLUE = "#76a9ff"
+RED = "#ff8585"
+
+REQUIRED_COLUMNS = {"Survived", "Sex", "Pclass", "Age"}
+FEATURES = ["Sex", "Pclass", "Age", "SibSp", "Parch", "Fare", "Embarked"]
+
+
+class TitanicApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Titanic AI Analyzer")
+        self.root.geometry("1120x760")
+        self.root.minsize(900, 650)
+        self.root.configure(bg=APP_BG)
+
+        self.df = None
+        self.model = None
+        self.model_accuracy = None
+        self.training_columns = []
+        self.chat_history = []
+
+        self._setup_style()
+        self._build_header()
+        self._build_tabs()
+        self._show_welcome()
+
+    # -------------------- ИНТЕРФЕЙС --------------------
+
+    def _setup_style(self):
+        style = ttk.Style()
+        style.theme_use("clam")
+        style.configure(
+            "TNotebook",
+            background=APP_BG,
+            borderwidth=0,
+        )
+        style.configure(
+            "TNotebook.Tab",
+            background=PANEL_BG,
+            foreground=TEXT_COLOR,
+            padding=(18, 10),
+            font=("Segoe UI", 10, "bold"),
+        )
+        style.map(
+            "TNotebook.Tab",
+            background=[("selected", CARD_BG)],
+            foreground=[("selected", ACCENT)],
+        )
+        style.configure(
+            "Treeview",
+            background=PANEL_BG,
+            foreground=TEXT_COLOR,
+            fieldbackground=PANEL_BG,
+            rowheight=28,
+            borderwidth=0,
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=CARD_BG,
+            foreground=TEXT_COLOR,
+            font=("Segoe UI", 9, "bold"),
+        )
+        style.map("Treeview", background=[("selected", "#314760")])
+
+    def _build_header(self):
+        header = tk.Frame(self.root, bg=APP_BG)
+        header.pack(fill="x", padx=24, pady=(20, 12))
+
+        title_box = tk.Frame(header, bg=APP_BG)
+        title_box.pack(side="left", fill="x", expand=True)
+
+        tk.Label(
+            title_box,
+            text="TITANIC AI ANALYZER",
+            bg=APP_BG,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 22, "bold"),
+        ).pack(anchor="w")
+
+        tk.Label(
+            title_box,
+            text="Анализ данных • Машинное обучение • ИИ-помощник",
+            bg=APP_BG,
+            fg=MUTED_COLOR,
+            font=("Segoe UI", 10),
+        ).pack(anchor="w", pady=(3, 0))
+
+        self.load_button = tk.Button(
+            header,
+            text="  Загрузить CSV  ",
+            command=self.load_csv,
+            bg=ACCENT,
+            fg="#102019",
+            activebackground="#85e8bf",
+            activeforeground="#102019",
+            relief="flat",
+            cursor="hand2",
+            font=("Segoe UI", 10, "bold"),
+            padx=12,
+            pady=10,
+        )
+        self.load_button.pack(side="right")
+
+        self.status_label = tk.Label(
+            self.root,
+            text="Файл не загружен. Загрузите Titanic CSV для начала работы.",
+            bg=PANEL_BG,
+            fg=MUTED_COLOR,
+            anchor="w",
+            padx=14,
+            pady=9,
+            font=("Segoe UI", 9),
+        )
+        self.status_label.pack(fill="x", padx=24, pady=(0, 14))
+
+    def _build_tabs(self):
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True, padx=24, pady=(0, 22))
+
+        self.stats_tab = tk.Frame(self.notebook, bg=APP_BG)
+        self.predict_tab = tk.Frame(self.notebook, bg=APP_BG)
+        self.chat_tab = tk.Frame(self.notebook, bg=APP_BG)
+
+        self.notebook.add(self.stats_tab, text="  Статистика  ")
+        self.notebook.add(self.predict_tab, text="  Прогноз ИИ  ")
+        self.notebook.add(self.chat_tab, text="  ИИ-чат  ")
+
+        self._build_stats_tab()
+        self._build_predict_tab()
+        self._build_chat_tab()
+
+    def _card(self, parent, title):
+        frame = tk.Frame(parent, bg=PANEL_BG, padx=16, pady=14)
+        tk.Label(
+            frame,
+            text=title,
+            bg=PANEL_BG,
+            fg=TEXT_COLOR,
+            font=("Segoe UI", 11, "bold"),
+        ).pack(anchor="w", pady=(0, 10))
+        return frame
+
+    def _build_stats_tab(self):
+        top = tk.Frame(self.stats_tab, bg=APP_BG)
+        top.pack(fill="x", padx=14, pady=14)
+
+        self.metric_labels = {}
+        metrics = [
+            ("passengers", "ПАССАЖИРОВ"),
+            ("survived", "ВЫЖИЛО"),
+            ("rate", "ВЫЖИВАЕМОСТЬ"),
+            ("accuracy", "ТОЧНОСТЬ МОДЕЛИ"),
+        ]
+        for key, label in metrics:
+            card = tk.Frame(top, bg=PANEL_BG, padx=16, pady=14)
+            card.pack(side="left", fill="both", expand=True, padx=(0, 10))
+            tk.Label(
+                card, text=label, bg=PANEL_BG, fg=MUTED_COLOR,
+                font=("Segoe UI", 8, "bold")
+            ).pack(anchor="w")
+            value = tk.Label(
+                card, text="—", bg=PANEL_BG, fg=ACCENT,
+                font=("Segoe UI", 19, "bold")
+            )
+            value.pack(anchor="w", pady=(6, 0))
+            self.metric_labels[key] = value
+
+        content = tk.Frame(self.stats_tab, bg=APP_BG)
+        content.pack(fill="both", expand=True, padx=14, pady=(0, 14))
+
+        left = self._card(content, "Краткий отчёт")
+        left.pack(side="left", fill="both", expand=True, padx=(0, 8))
+
+        self.stats_text = tk.Text(
+            left,
+            bg=PANEL_BG,
+            fg=TEXT_COLOR,
+            insertbackground=TEXT_COLOR,
+            relief="flat",
+            wrap="word",
+            font=("Consolas", 10),
+            padx=8,
+            pady=8,
+        )
+        self.stats_text.pack(fill="both", expand=True)
+
+        right = self._card(content, "Выживаемость по группам")
+        right.pack(side="left", fill="both", expand=True, padx=(8, 0))
+
+        columns = ("group", "count", "rate")
+        self.stats_tree = ttk.Treeview(
+            right, columns=columns, show="headings", height=12
+        )
+        self.stats_tree.heading("group", text="Группа")
+        self.stats_tree.heading("count", text="Пассажиры")
+        self.stats_tree.heading("rate", text="Выжило")
+        self.stats_tree.column("group", width=180)
+        self.stats_tree.column("count", width=90, anchor="center")
+        self.stats_tree.column("rate", width=90, anchor="center")
+        self.stats_tree.pack(fill="both", expand=True)
+
+    def _build_predict_tab(self):
+        outer = tk.Frame(self.predict_tab, bg=APP_BG)
+        outer.pack(fill="both", expand=True, padx=20, pady=20)
+
+        intro = tk.Label(
+            outer,
+            text=(
+                "Введите характеристики пассажира. Модель машинного обучения "
+                "оценит вероятность выживания на основе загруженного набора данных."
+            ),
+            bg=APP_BG,
+            fg=MUTED_COLOR,
+            justify="left",
+            wraplength=850,
+            font=("Segoe UI", 10),
+        )
+        intro.pack(anchor="w", pady=(0, 18))
+
+        form = tk.Frame(outer, bg=PANEL_BG, padx=22, pady=20)
+        form.pack(anchor="nw", fill="x")
+
+        self.predict_vars = {}
+        fields = [
+            ("Пол", "Sex", ["female", "male"], "female"),
+            ("Класс билета", "Pclass", ["1", "2", "3"], "3"),
+            ("Возраст", "Age", None, "25"),
+            ("Братья/сёстры и супруги", "SibSp", None, "0"),
+            ("Родители и дети", "Parch", None, "0"),
+            ("Стоимость билета", "Fare", None, "32"),
+            ("Порт посадки", "Embarked", ["S", "C", "Q"], "S"),
+        ]
+
+        for index, (label, key, options, default) in enumerate(fields):
+            row = index // 2
+            col = (index % 2) * 2
+            tk.Label(
+                form, text=label, bg=PANEL_BG, fg=TEXT_COLOR,
+                font=("Segoe UI", 10)
+            ).grid(row=row, column=col, sticky="w", padx=(0, 12), pady=10)
+
+            if options:
+                widget = ttk.Combobox(
+                    form, values=options, state="readonly", width=20
+                )
+                widget.set(default)
+            else:
+                widget = tk.Entry(
+                    form, bg=CARD_BG, fg=TEXT_COLOR,
+                    insertbackground=TEXT_COLOR, relief="flat", width=23
+                )
+                widget.insert(0, default)
+            widget.grid(row=row, column=col + 1, sticky="ew", padx=(0, 26), pady=10)
+            self.predict_vars[key] = widget
+
+        form.grid_columnconfigure(1, weight=1)
+        form.grid_columnconfigure(3, weight=1)
+
+        tk.Button(
+            outer,
+            text="Рассчитать прогноз",
+            command=self.predict_survival,
+            bg=ACCENT,
+            fg="#102019",
+            activebackground="#85e8bf",
+            relief="flat",
+            cursor="hand2",
+            font=("Segoe UI", 10, "bold"),
+            padx=18,
+            pady=10,
+        ).pack(anchor="w", pady=18)
+
+        self.prediction_result = tk.Label(
+            outer,
+            text="Сначала загрузите CSV и обучите модель.",
+            bg=PANEL_BG,
+            fg=TEXT_COLOR,
+            justify="left",
+            anchor="w",
+            padx=18,
+            pady=16,
+            font=("Segoe UI", 11),
+            wraplength=850,
+        )
+        self.prediction_result.pack(fill="x")
+
+        self.model_info = tk.Label(
+            outer,
+            text="",
+            bg=APP_BG,
+            fg=MUTED_COLOR,
+            font=("Segoe UI", 9),
+        )
+        self.model_info.pack(anchor="w", pady=10)
+
+    def _build_chat_tab(self):
+        outer = tk.Frame(self.chat_tab, bg=APP_BG)
+        outer.pack(fill="both", expand=True, padx=16, pady=16)
+
+        tk.Label(
+            outer,
+            text=(
+                "Задавайте вопросы по загруженному датасету. Без API-ключа "
+                "доступен локальный помощник по статистике. Для ответов "
+                "генеративной языковой модели настройте OpenAI API."
+            ),
+            bg=APP_BG,
+            fg=MUTED_COLOR,
+            justify="left",
+            wraplength=900,
+            font=("Segoe UI", 9),
+        ).pack(anchor="w", pady=(0, 12))
+
+        self.chat_display = tk.Text(
+            outer,
+            bg=PANEL_BG,
+            fg=TEXT_COLOR,
+            insertbackground=TEXT_COLOR,
+            relief="flat",
+            wrap="word",
+            font=("Segoe UI", 10),
+            padx=12,
+            pady=12,
+            state="disabled",
+        )
+        self.chat_display.pack(fill="both", expand=True)
+
+        bottom = tk.Frame(outer, bg=APP_BG)
+        bottom.pack(fill="x", pady=(12, 0))
+
+        self.chat_input = tk.Entry(
+            bottom,
+            bg=CARD_BG,
+            fg=TEXT_COLOR,
+            insertbackground=TEXT_COLOR,
+            relief="flat",
+            font=("Segoe UI", 10),
+        )
+        self.chat_input.pack(side="left", fill="x", expand=True, ipady=11, padx=(0, 10))
+        self.chat_input.bind("<Return>", lambda event: self.send_chat())
+
+        tk.Button(
+            bottom,
+            text="Отправить",
+            command=self.send_chat,
+            bg=BLUE,
+            fg="#101827",
+            activebackground="#9bbfff",
+            relief="flat",
+            cursor="hand2",
+            font=("Segoe UI", 10, "bold"),
+            padx=18,
+            pady=9,
+        ).pack(side="right")
+
+        self._append_chat(
+            "Система",
+            "Здравствуйте! Загрузите Titanic CSV, затем спросите, например: "
+            "«Какова выживаемость женщин?» или «Сравни классы билетов»."
+        )
+
+    def _show_welcome(self):
+        self.stats_text.insert(
+            "1.0",
+            "Загрузите CSV-файл, содержащий данные пассажиров Титаника.\n\n"
+            "Минимально обязательные столбцы:\n"
+            "• Survived — 0: не выжил, 1: выжил\n"
+            "• Sex — пол\n"
+            "• Pclass — класс билета\n"
+            "• Age — возраст\n\n"
+            "Для прогноза желательно наличие SibSp, Parch, Fare и Embarked."
+        )
+
+    # -------------------- ЗАГРУЗКА И ПРОВЕРКА ДАННЫХ --------------------
+
+    def load_csv(self):
+        file_path = filedialog.askopenfilename(
+            title="Выберите Titanic CSV",
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not file_path:
+            return
+
+        try:
+            data = pd.read_csv(file_path)
+            missing = REQUIRED_COLUMNS - set(data.columns)
+            if missing:
+                messagebox.showerror(
+                    "Не хватает столбцов",
+                    "В файле отсутствуют обязательные столбцы: "
+                    + ", ".join(sorted(missing)),
+                )
+                return
+
+            if data.empty:
+                messagebox.showerror("Пустой файл", "В CSV нет строк с данными.")
+                return
+
+            data["Survived"] = pd.to_numeric(data["Survived"], errors="coerce")
+            data = data[data["Survived"].isin([0, 1])].copy()
+            if data.empty:
+                messagebox.showerror(
+                    "Ошибка данных",
+                    "В столбце Survived должны быть значения 0 или 1.",
+                )
+                return
+
+            # Добавляем необязательные признаки, если их нет в файле.
+            for col in FEATURES:
+                if col not in data.columns:
+                    data[col] = None
+
+            self.df = data
+            self.model = None
+            self.model_accuracy = None
+            self.status_label.config(
+                text=f"Загружен файл: {os.path.basename(file_path)} • "
+                     f"{len(data)} записей",
+                fg=ACCENT,
+            )
+            self.analyze_data()
+            self.train_model()
+            self._append_chat(
+                "Система",
+                f"Данные загружены: {len(data)} пассажиров. "
+                "Можно задавать вопросы по статистике или использовать прогноз."
+            )
+        except Exception as exc:
+            messagebox.showerror("Ошибка чтения файла", str(exc))
+
+    # -------------------- СТАТИСТИКА --------------------
+
+    @staticmethod
+    def _survival_rate(series):
+        return series.mean() * 100 if len(series) else 0
+
+    def analyze_data(self):
+        if self.df is None:
+            return
+
+        df = self.df.copy()
+        total = len(df)
+        survived = int(df["Survived"].sum())
+        rate = survived / total * 100 if total else 0
+
+        self.metric_labels["passengers"].config(text=f"{total:,}".replace(",", " "))
+        self.metric_labels["survived"].config(text=f"{survived:,}".replace(",", " "))
+        self.metric_labels["rate"].config(text=f"{rate:.1f}%")
+        self.metric_labels["accuracy"].config(text="Обучение…")
+
+        report = [
+            "ОБЩАЯ СТАТИСТИКА",
+            "=" * 34,
+            f"Всего записей: {total}",
+            f"Выжило: {survived}",
+            f"Не выжило: {total - survived}",
+            f"Общая выживаемость: {rate:.2f}%",
+            f"Пропущено значений возраста: {df['Age'].isna().sum()}",
+            "",
+            "ВЫЖИВАЕМОСТЬ ПО ПРИЗНАКАМ",
+            "=" * 34,
+        ]
+
+        self.stats_tree.delete(*self.stats_tree.get_children())
+
+        def add_group_stats(column, label_func):
+            if column not in df.columns:
+                return
+            grouped = df.groupby(column, dropna=False)["Survived"].agg(["count", "mean"])
+            for key, row in grouped.iterrows():
+                label = label_func(key)
+                percent = row["mean"] * 100
+                self.stats_tree.insert(
+                    "", "end",
+                    values=(label, int(row["count"]), f"{percent:.1f}%")
+                )
+                report.append(
+                    f"{label}: {percent:.1f}% ({int(row['count'])} записей)"
+                )
+
+        add_group_stats(
+            "Sex",
+            lambda value: {"female": "Женщины", "male": "Мужчины"}.get(
+                str(value).lower(), str(value)
+            ),
+        )
+        add_group_stats("Pclass", lambda value: f"Класс {value}")
+
+        df["AgeGroup"] = pd.cut(
+            pd.to_numeric(df["Age"], errors="coerce"),
+            bins=[0, 12, 18, 60, 100],
+            labels=["Дети (0–12)", "Подростки (13–18)", "Взрослые (19–60)", "60+"],
+            include_lowest=True,
+        )
+        add_group_stats("AgeGroup", lambda value: str(value) if pd.notna(value) else "Возраст неизвестен")
+
+        if "SibSp" in df and "Parch" in df:
+            family_size = (
+                pd.to_numeric(df["SibSp"], errors="coerce").fillna(0)
+                + pd.to_numeric(df["Parch"], errors="coerce").fillna(0)
+            )
+            df["TravelGroup"] = family_size.apply(
+                lambda x: "Один" if x == 0 else
+                ("Семья 1–3" if x <= 3 else "Большая семья (>3)")
+            )
+            add_group_stats("TravelGroup", str)
+
+        self.stats_text.delete("1.0", tk.END)
+        self.stats_text.insert("1.0", "\n".join(report))
+
+    # -------------------- МАШИННОЕ ОБУЧЕНИЕ --------------------
+
+    def train_model(self):
+        if self.df is None:
+            return
+
+        data = self.df.copy()
+        features = [col for col in FEATURES if col in data.columns]
+        X = data[features].copy()
+        y = data["Survived"].astype(int)
+
+        if y.nunique() < 2 or len(data) < 10:
+            self.model = None
+            self.model_info.config(
+                text="Для обучения нужно не менее 10 записей и оба класса Survived (0 и 1)."
+            )
+            self.metric_labels["accuracy"].config(text="Недостаточно данных")
+            return
+
+        numeric_features = [
+            col for col in ["Pclass", "Age", "SibSp", "Parch", "Fare"]
+            if col in features
+        ]
+        categorical_features = [
+            col for col in ["Sex", "Embarked"] if col in features
+        ]
+
+        numeric_pipeline = Pipeline([
+            ("imputer", SimpleImputer(strategy="median")),
+            ("scaler", StandardScaler()),
+        ])
+        categorical_pipeline = Pipeline([
+            ("imputer", SimpleImputer(strategy="most_frequent")),
+            ("encoder", OneHotEncoder(handle_unknown="ignore")),
+        ])
+
+        transformers = []
+        if numeric_features:
+            transformers.append(("numeric", numeric_pipeline, numeric_features))
+        if categorical_features:
+            transformers.append(("categorical", categorical_pipeline, categorical_features))
+
+        preprocess = ColumnTransformer(transformers=transformers)
+        self.model = Pipeline([
+            ("preprocess", preprocess),
+            ("classifier", LogisticRegression(max_iter=1000, class_weight=None)),
+        ])
+
+        # Стратифицированная выборка помогает сохранить доли классов.
+        try:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42, stratify=y
+            )
+            evaluation_model = Pipeline([
+                ("preprocess", preprocess),
+                ("classifier", LogisticRegression(max_iter=1000)),
+            ])
+            evaluation_model.fit(X_train, y_train)
+            score = accuracy_score(y_test, evaluation_model.predict(X_test))
+            self.model.fit(X, y)
+            self.model_accuracy = score
+            self.metric_labels["accuracy"].config(text=f"{score * 100:.1f}%")
+            self.model_info.config(
+                text=f"Модель: логистическая регрессия • "
+                     f"Точность на отложенной выборке: {score * 100:.1f}% "
+                     f"(результат зависит от набора данных)"
+            )
+        except Exception as exc:
+            self.model = None
+            self.model_accuracy = None
+            self.metric_labels["accuracy"].config(text="Ошибка")
+            self.model_info.config(text=f"Не удалось обучить модель: {exc}")
+
+    def predict_survival(self):
+        if self.model is None:
+            messagebox.showwarning(
+                "Модель не готова",
+                "Сначала загрузите подходящий CSV-файл и убедитесь, что модель обучилась.",
+            )
+            return
+
+        try:
+            row = {
+                "Sex": self.predict_vars["Sex"].get(),
+                "Pclass": float(self.predict_vars["Pclass"].get()),
+                "Age": float(self.predict_vars["Age"].get()),
+                "SibSp": float(self.predict_vars["SibSp"].get()),
+                "Parch": float(self.predict_vars["Parch"].get()),
+                "Fare": float(self.predict_vars["Fare"].get()),
+                "Embarked": self.predict_vars["Embarked"].get(),
+            }
+            sample = pd.DataFrame([row])[FEATURES]
+            probability = float(self.model.predict_proba(sample)[0][1])
+            prediction = int(self.model.predict(sample)[0])
+
+            verdict = "выживание вероятнее по оценке модели" if prediction else "модель относит пассажира к группе с более низкой вероятностью выживания"
+            self.prediction_result.config(
+                text=(
+                    f"Оценка вероятности выживания: {probability * 100:.1f}%\n\n"
+                    f"Результат классификации: {'выжил бы' if prediction else 'не выжил бы'} "
+                    f"по прогнозу модели.\n"
+                    f"Интерпретация: {verdict}.\n\n"
+                    "Важно: это статистический прогноз, а не достоверное знание "
+                    "исторического исхода. Результат зависит от качества и состава CSV."
+                ),
+                fg=ACCENT if prediction else RED,
+            )
+        except ValueError:
+            messagebox.showerror(
+                "Проверьте ввод",
+                "Возраст, класс, количество родственников и стоимость билета "
+                "должны быть числами.",
+            )
+        except Exception as exc:
+            messagebox.showerror("Ошибка прогноза", str(exc))
+
+    # -------------------- ЧАТ --------------------
+
+    def _append_chat(self, speaker, message):
+        self.chat_display.config(state="normal")
+        self.chat_display.insert(tk.END, f"{speaker}\n", "speaker")
+        self.chat_display.insert(tk.END, f"{message}\n\n")
+        self.chat_display.tag_config("speaker", foreground=ACCENT, font=("Segoe UI", 10, "bold"))
+        self.chat_display.see(tk.END)
+        self.chat_display.config(state="disabled")
+
+    def send_chat(self):
+        question = self.chat_input.get().strip()
+        if not question:
+            return
+        self.chat_input.delete(0, tk.END)
+        self._append_chat("Вы", question)
+
+        if self.df is None:
+            self._append_chat("Помощник", "Сначала загрузите CSV-файл с данными.")
+            return
+
+        # Если задан API-ключ, используем генеративную модель в фоновом потоке.
+        api_key = os.getenv("OPENAI_API_KEY")
+        if api_key:
+            self._append_chat("Помощник", "Готовлю ответ ИИ…")
+            threading.Thread(
+                target=self._ask_openai,
+                args=(question, api_key),
+                daemon=True,
+            ).start()
+        else:
+            answer = self._local_answer(question)
+            self._append_chat("Локальный помощник", answer)
+
+    def _data_summary_for_ai(self):
+        df = self.df
+        summary = {
+            "total": len(df),
+            "survived": int(df["Survived"].sum()),
+            "survival_rate_percent": round(float(df["Survived"].mean() * 100), 2),
+        }
+        for column in ["Sex", "Pclass", "AgeGroup", "TravelGroup"]:
+            if column in df.columns:
+                if column == "AgeGroup" or column == "TravelGroup":
+                    continue
+                grouped = df.groupby(column, dropna=False)["Survived"].agg(["count", "mean"])
+                summary[column] = {
+                    str(k): {
+                        "count": int(v["count"]),
+                        "survival_percent": round(float(v["mean"] * 100), 2),
+                    }
+                    for k, v in grouped.iterrows()
+                }
+        return summary
+
+    def _ask_openai(self, question, api_key):
+        try:
+            # Опциональная зависимость: pip install openai
+            from openai import OpenAI
+
+            client = OpenAI(api_key=api_key)
+            summary = self._data_summary_for_ai()
+            response = client.responses.create(
+                model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+                instructions=(
+                    "Ты аналитик датасета пассажиров Титаника. Отвечай по-русски, "
+                    "понятно и кратко. Используй только переданную статистику; "
+                    "если данных для вывода недостаточно, скажи об этом. "
+                    "Не выдавай корреляцию за причинность."
+                ),
+                input=(
+                    f"Сводка данных: {summary}\n\n"
+                    f"Вопрос пользователя: {question}"
+                ),
+            )
+            answer = response.output_text
+        except Exception as exc:
+            answer = (
+                "Не удалось получить ответ от языковой модели. Проверьте установку "
+                "пакета openai, API-ключ и подключение к интернету.\n"
+                f"Подробности: {exc}"
+            )
+        self.root.after(0, lambda: self._append_chat("ИИ", answer))
+
+    def _local_answer(self, question):
+        """Простой локальный помощник по заранее рассчитанной статистике."""
+        q = question.lower()
+        df = self.df
+        total = len(df)
+        survived = int(df["Survived"].sum())
+        rate = df["Survived"].mean() * 100
+
+        if any(word in q for word in ["сколько", "количество", "всего", "пассажир"]):
+            return (
+                f"В загруженном наборе {total} записей. "
+                f"Выжило {survived}, общая выживаемость — {rate:.2f}%."
+            )
+
+        if any(word in q for word in ["женщ", "мужчин", "пол"]):
+            if "Sex" not in df:
+                return "В данных нет столбца Sex."
+            grouped = df.groupby("Sex")["Survived"].agg(["count", "mean"])
+            lines = [
+                f"{sex}: {int(row['count'])} пассажиров, выживаемость {row['mean'] * 100:.1f}%"
+                for sex, row in grouped.iterrows()
+            ]
+            return "Статистика по полу:\n" + "\n".join(lines)
+
+        if any(word in q for word in ["класс", "билет", "перв", "втор", "трет"]):
+            grouped = df.groupby("Pclass")["Survived"].agg(["count", "mean"])
+            lines = [
+                f"{klass} класс: {int(row['count'])} пассажиров, "
+                f"выживаемость {row['mean'] * 100:.1f}%"
+                for klass, row in grouped.iterrows()
+            ]
+            return "Сравнение классов:\n" + "\n".join(lines)
+
+        if any(word in q for word in ["возраст", "дет", "пожил"]):
+            ages = pd.to_numeric(df["Age"], errors="coerce")
+            groups = [
+                ("Дети (0–12)", (ages >= 0) & (ages <= 12)),
+                ("Подростки (13–18)", (ages > 12) & (ages <= 18)),
+                ("Взрослые (19–60)", (ages > 18) & (ages <= 60)),
+                ("Старше 60", ages > 60),
+            ]
+            lines = []
+            for label, mask in groups:
+                part = df[mask]
+                if len(part):
+                    lines.append(
+                        f"{label}: {len(part)} пассажиров, "
+                        f"выживаемость {part['Survived'].mean() * 100:.1f}%"
+                    )
+            return "Статистика по возрасту (возраст неизвестен у части пассажиров):\n" + "\n".join(lines)
+
+        if any(word in q for word in ["точност", "модель", "машинн", "обуч"]):
+            if self.model_accuracy is None:
+                return "Модель пока не обучена. Проверьте размер и содержимое CSV."
+            return (
+                f"Модель использует логистическую регрессию. Точность на отложенной "
+                f"выборке: {self.model_accuracy * 100:.1f}%. Это оценка на одном "
+                "разбиении данных; она не гарантирует такую же точность на новых данных."
+            )
+
+        return (
+            f"Общая выживаемость в данных — {rate:.2f}% ({survived} из {total}). "
+            "Без API я умею отвечать на вопросы о количестве пассажиров, поле, "
+            "возрасте, классах билетов и модели. Для свободного диалога настройте "
+            "OPENAI_API_KEY и установите пакет openai."
+        )
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = TitanicApp(root)
+    root.mainloop()
