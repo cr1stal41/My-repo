@@ -1,0 +1,86 @@
+"""Распознавание эмоций с веб-камеры ПК в обычном окне (без браузера).
+
+Запуск:  python cam.py
+Выход:   клавиша q или Esc
+"""
+import json
+from collections import deque
+
+import cv2
+import numpy as np
+import tensorflow as tf
+
+IMG_SIZE = (96, 96)
+CAMERA_INDEX = 0          # если камер несколько, попробуйте 1, 2...
+SMOOTH_FRAMES = 5         # усреднение по кадрам, чтобы подпись не дёргалась
+
+model = tf.keras.models.load_model("emotion_model.keras", safe_mode=False)
+with open("class_names.json", encoding="utf-8") as f:
+    class_names = json.load(f)
+
+face_cascade = cv2.CascadeClassifier(
+    cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+)
+if face_cascade.empty():
+    raise SystemExit("Не удалось загрузить детектор лиц OpenCV. "
+                     "Проверьте: pip install \"opencv-python<5\"")
+
+# На Windows DirectShow обычно открывает камеру надёжнее
+cap = cv2.VideoCapture(CAMERA_INDEX, cv2.CAP_DSHOW)
+if not cap.isOpened():
+    cap = cv2.VideoCapture(CAMERA_INDEX)
+if not cap.isOpened():
+    raise SystemExit("Не удалось открыть камеру. Закройте Zoom/Telegram/Teams, "
+                     "проверьте доступ к камере в Параметры Windows -> Конфиденциальность -> Камера.")
+
+history = deque(maxlen=SMOOTH_FRAMES)
+print("Камера запущена. Для выхода нажмите q или Esc в окне с видео.")
+
+while True:
+    ok, frame = cap.read()
+    if not ok:
+        print("Не удалось получить кадр с камеры.")
+        break
+
+    frame = cv2.flip(frame, 1)  # зеркальное отображение, как в зеркале
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5,
+                                          minSize=(80, 80))
+
+    if len(faces) > 0:
+        x, y, w, h = max(faces, key=lambda b: b[2] * b[3])  # самое большое лицо
+        # та же подготовка, что у обучающих данных: серый 48x48 -> IMG_SIZE -> 3 канала
+        face_gray = cv2.resize(gray[y:y + h, x:x + w], (48, 48),
+                               interpolation=cv2.INTER_AREA)
+        face_in = cv2.resize(face_gray, IMG_SIZE, interpolation=cv2.INTER_LINEAR)
+        face_in = np.stack([face_in] * 3, axis=-1).astype("float32")
+
+        probs = model.predict(face_in[None, ...], verbose=0)[0]
+        history.append(probs)
+        avg = np.mean(history, axis=0)
+        best = int(np.argmax(avg))
+
+        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+        cv2.putText(frame, f"{class_names[best]} {avg[best]:.0%}",
+                    (x, max(y - 10, 25)), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.9, (0, 255, 0), 2)
+
+        # панель с вероятностями слева
+        for i, (name, p) in enumerate(zip(class_names, avg)):
+            yy = 25 + i * 26
+            cv2.rectangle(frame, (10, yy - 14), (10 + int(p * 150), yy + 4),
+                          (0, 200, 0) if i == best else (160, 160, 160), -1)
+            cv2.putText(frame, f"{name}", (170, yy), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.5, (255, 255, 255), 1)
+    else:
+        history.clear()
+        cv2.putText(frame, "Face not found", (10, 30),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+    cv2.imshow("Emotions (q - exit)", frame)
+    key = cv2.waitKey(1) & 0xFF
+    if key in (ord("q"), 27):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
